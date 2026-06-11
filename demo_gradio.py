@@ -18,6 +18,7 @@ import torch
 
 from visual_util import predictions_to_glb
 from vggt_omega.models import VGGTOmega
+from vggt_omega.utils.geometry import unproject_depth_map_to_point_map
 from vggt_omega.utils.load_fn import load_and_preprocess_images
 from vggt_omega.utils.pose_enc import encoding_to_camera
 
@@ -70,37 +71,6 @@ def run_model(target_dir: str, model: VGGTOmega, image_resolution: int) -> dict:
 
     torch.cuda.empty_cache()
     return predictions_np
-
-
-def unproject_depth_map_to_point_map(depth_map: np.ndarray, extrinsic: np.ndarray, intrinsic: np.ndarray) -> np.ndarray:
-    depth = depth_map[..., 0]
-    num_frames, height, width = depth.shape
-
-    y, x = np.meshgrid(np.arange(height), np.arange(width), indexing="ij")
-    x = np.broadcast_to(x[None], (num_frames, height, width))
-    y = np.broadcast_to(y[None], (num_frames, height, width))
-
-    fx = intrinsic[:, 0, 0][:, None, None]
-    fy = intrinsic[:, 1, 1][:, None, None]
-    cx = intrinsic[:, 0, 2][:, None, None]
-    cy = intrinsic[:, 1, 2][:, None, None]
-
-    camera_points = np.stack(
-        [
-            (x - cx) / fx * depth,
-            (y - cy) / fy * depth,
-            depth,
-        ],
-        axis=-1,
-    )
-
-    rotation = extrinsic[:, :3, :3]
-    translation = extrinsic[:, :3, 3]
-    return np.einsum(
-        "sij,shwj->shwi",
-        np.transpose(rotation, (0, 2, 1)),
-        camera_points - translation[:, None, None, :],
-    )
 
 
 def file_path(file_data) -> str:
@@ -547,7 +517,7 @@ def build_ui(model: VGGTOmega, image_resolution: int):
 
 def parse_args():
     parser = argparse.ArgumentParser(description="VGGT-Omega Gradio demo")
-    parser.add_argument("--checkpoint", required=True, help="Local VGGT-Omega checkpoint path.")
+    parser.add_argument("--checkpoint", default="ckpts/VGGT-Omega/vggt_omega_1b_512.pt", help="Local VGGT-Omega checkpoint path.")
     parser.add_argument("--image-resolution", type=int, default=512, help="Input image resolution. Default: 512.")
     parser.add_argument("--server-name", default="0.0.0.0")
     parser.add_argument("--server-port", type=int, default=7860)

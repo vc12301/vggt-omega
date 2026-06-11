@@ -5,6 +5,7 @@ __pycache__/
 .ruff_cache/
 .mypy_cache/
 .venv/
+.vscode/
 venv/
 build/
 dist/
@@ -16,3 +17,4 @@ skyseg.onnx.tmp
 *.pt
 *.pth
 *.safetensors
+ckpts/

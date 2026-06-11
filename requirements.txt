@@ -5,3 +5,4 @@ Pillow
 einops
 safetensors
 opencv-python
+plyfile
