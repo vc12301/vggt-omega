@@ -18,3 +18,7 @@ skyseg.onnx.tmp
 *.pth
 *.safetensors
 ckpts/
+
+
+CLAUDE.md
+*outputs/
