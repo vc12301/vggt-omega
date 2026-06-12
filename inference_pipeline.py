@@ -29,6 +29,7 @@ from vggt_omega.utils.load_fn import load_and_preprocess_images
 from vggt_omega.utils.pose_enc import encoding_to_camera
 
 DEFAULT_IMAGE_DIR = "demo_outputs/input_images_20260610_214602_134139/images"
+DEFAULT_IMAGE_DIR = "/data-nas/experiments/yemu/workspace/HY-World-2.0/inference_output/_frames/bedroom_w_exterior"
 IMAGE_EXTENSIONS = (".png", ".jpg", ".jpeg", ".bmp", ".webp", ".tif", ".tiff")
 
 
@@ -53,14 +54,31 @@ def depth_edge(depth: np.ndarray, rtol: float = 0.03, kernel_size: int = 3) -> n
     return (relative_jump > rtol).reshape(original_shape)
 
 
-def load_model(checkpoint_path: str, device: str = "cuda") -> VGGTOmega:
+def load_model(
+    checkpoint_path: str,
+    device: str = "cuda",
+    enable_gs: bool = False,
+    gs_sh_degree: int = 0,
+) -> VGGTOmega:
     if not os.path.isfile(checkpoint_path):
         raise FileNotFoundError(f"Checkpoint not found: {checkpoint_path}")
 
     state_dict = torch.load(checkpoint_path, map_location="cpu")
     enable_alignment = any(k.startswith("text_alignment_head.") for k in state_dict)
-    model = VGGTOmega(enable_alignment=enable_alignment).eval()
-    model.load_state_dict(state_dict)
+    model = VGGTOmega(enable_alignment=enable_alignment, enable_gs=enable_gs, gs_sh_degree=gs_sh_degree).eval()
+
+    if enable_gs:
+        # Released checkpoints have no GS weights yet; keep the gs_head initialization.
+        result = model.load_state_dict(state_dict, strict=False)
+        unexpected = [k for k in result.missing_keys if not k.startswith(("gs_head.", "gs_adapter."))]
+        if unexpected or result.unexpected_keys:
+            raise RuntimeError(
+                f"Checkpoint mismatch beyond GS modules: missing={unexpected}, unexpected={result.unexpected_keys}"
+            )
+        if result.missing_keys:
+            print(f"GS head not in checkpoint; using initialized weights ({len(result.missing_keys)} tensors)")
+    else:
+        model.load_state_dict(state_dict)
     return model.to(device)
 
 

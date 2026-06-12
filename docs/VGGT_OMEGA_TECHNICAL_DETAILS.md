@@ -20,7 +20,7 @@ Aggregator（DINOv3 patch embed + 24 层交替注意力）
 ┌──────────────┬──────────────┬──────────────────────┐
 │ CameraHead   │ DenseHead    │ TextAlignmentHead    │
 │ → pose_enc   │ → depth      │ → text_alignment_*   │
-│   (B,N,9)    │   depth_conf │   （仅 text 检查点）  │
+│   (B,N,9)    │   depth_conf │   （仅 text 检查点）   │
 └──────────────┴──────────────┴──────────────────────┘
 ```
 

@@ -1,0 +1,5 @@
+# Extras for the 3DGS branch (GSDPT head rendering/export, test_gs_inference.py)
+gsplat
+e3nn  # only needed for sh_degree > 0 (SH rotation to world space)
+imageio
+imageio-ffmpeg

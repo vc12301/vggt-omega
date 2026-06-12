@@ -10,7 +10,9 @@ import torch
 import torch.nn as nn
 
 from vggt_omega.models.aggregator import Aggregator
-from vggt_omega.models.heads import CameraHead, DenseHead, TextAlignmentHead
+from vggt_omega.models.gs_adapter import GaussianAdapter
+from vggt_omega.models.heads import CameraHead, DenseHead, GSDPTHead, TextAlignmentHead
+from vggt_omega.utils.pose_enc import encoding_to_camera
 
 
 class VGGTOmega(nn.Module):
@@ -23,6 +25,8 @@ class VGGTOmega(nn.Module):
         enable_camera: bool = True,
         enable_depth: bool = True,
         enable_alignment: bool = False,
+        enable_gs: bool = False,
+        gs_sh_degree: int = 0,
     ) -> None:
         super().__init__()
 
@@ -31,6 +35,15 @@ class VGGTOmega(nn.Module):
         self.camera_head = CameraHead(dim_in=2 * embed_dim) if enable_camera else None
         self.dense_head = DenseHead(dim_in=2 * embed_dim, patch_size=patch_size) if enable_depth else None
         self.text_alignment_head = TextAlignmentHead(dim_in=2 * embed_dim) if enable_alignment else None
+
+        self.gs_head = None
+        self.gs_adapter = None
+        if enable_gs:
+            if not (enable_camera and enable_depth):
+                raise ValueError("enable_gs requires both the camera and depth heads")
+            self.gs_adapter = GaussianAdapter(sh_degree=gs_sh_degree)
+            self.gs_head = GSDPTHead(dim_in=2 * embed_dim, patch_size=patch_size, sh_degree=gs_sh_degree)
+            assert self.gs_head.output_dim == self.gs_adapter.d_in + 1
 
     def forward(self, images: torch.Tensor) -> dict[str, torch.Tensor]:
         if len(images.shape) == 4:
@@ -69,6 +82,25 @@ class VGGTOmega(nn.Module):
                         aggregated_tokens_list,
                         patch_token_start=patch_token_start,
                     )
+                )
+
+            if self.gs_head is not None:
+                raw_gs, gs_opacity = self.gs_head(
+                    aggregated_tokens_list,
+                    images=images,
+                    patch_token_start=patch_token_start,
+                )
+                predictions["raw_gs"] = raw_gs
+                predictions["gs_opacity"] = gs_opacity
+
+                extrinsic, intrinsic = encoding_to_camera(predictions["pose_enc"], images.shape[-2:])
+                predictions["gaussians"] = self.gs_adapter(
+                    extrinsics=extrinsic,
+                    intrinsics=intrinsic,
+                    depths=predictions["depth"][..., 0],
+                    opacities=gs_opacity,
+                    raw_gaussians=raw_gs,
+                    images=images,
                 )
 
         if not self.training:
