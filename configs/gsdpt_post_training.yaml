@@ -1,0 +1,146 @@
+# GSDPT Head Post-Training — full-feature config
+# ===============================================
+# Mixed DL3DV + rendering data, context-view supervision, and the target-view
+# valid-visible-pixel mask. Mirrors Depth-Anything-3's gsdpt_post_training_v4.
+# All optional loss terms are exposed here; flip lambdas to 0 to disable.
+#
+# Usage:
+#   torchrun --nproc_per_node=8 train_gs.py \\
+#       --config configs/gsdpt_post_training.yaml
+
+seed: 42
+
+# --- Dataset selection ---
+dataset_mode: "mixed"
+mix_ratio: [1.0, 1.0]              # [dl3dv, rendering]; normalized internally
+
+# --- Model ---
+model:
+  checkpoint_path: "ckpts/VGGT-Omega/vggt_omega_1b_512.pt"
+  gs_sh_degree: 0
+  resume_gsdpt_checkpoint: null
+  resume_full_checkpoint: null
+  freeze_backbone: true
+  init_mode: "finetune"
+
+# --- Data (DL3DV) ---
+data:
+  data_root: "/data-nas/data/dataset/open_source/DL3DV-10K/960p"
+  train_buckets: ["1K", "2K", "3K", "4K", "5K", "6K", "7K", "8K", "9K", "10K", "11K"]
+  val_root: "/data-nas/data/dataset/open_source/DL3DV-10K/benchmark_140"
+  val_scene_subdir: "nerfstudio"
+  max_train_scenes: null
+  max_val_scenes: null
+  num_workers: 2
+  pin_memory: true
+  image_dir_name: "images_4"
+
+# --- Data (rendering_dataset) ---
+rendering_data:
+  data_root: "/data-nas/experiments/yemu/workspace/pano-video-data-process/rendering_dataset"
+  val_split_ratio: 0.02
+  image_dir_name: "perspective_frames"
+  camera_dir_name: "perspective_camera"
+  max_train_scenes: null
+  max_val_scenes: null
+  num_workers: 2
+  pin_memory: true
+
+# --- View Sampling (resolutions are multiples of patch_size=16) ---
+view_sampling:
+  resolution_schedules:
+    - resolution: [272, 480]
+      context_views: 32
+      target_views: 12
+      weight: 0.2
+    - resolution: [384, 672]
+      context_views: 16
+      target_views: 6
+      weight: 0.3
+    - resolution: [544, 960]
+      context_views: 8
+      target_views: 3
+      weight: 0.5
+  fps_rotation_weight: 1.0
+  min_scene_frames: 20
+
+# --- Curriculum Learning ---
+curriculum:
+  enabled: true
+  min_context_gap_start: 50
+  min_context_gap_end: 75
+  max_context_gap_start: 50
+  max_context_gap_end: 200
+  warmup_steps: 0
+
+# --- Training ---
+training:
+  max_iterations: 30000
+  batch_size: 1
+  gradient_accumulation_steps: 1
+  mixed_precision: "bf16"
+  gradient_clip_val: 0.5
+  torch_compile: false
+
+# --- Optimizer ---
+optimizer:
+  name: "adamw"
+  lr: 5.0e-5
+  weight_decay: 0.05
+  betas: [0.9, 0.95]
+  eps: 1.0e-8
+
+# --- Scheduler ---
+scheduler:
+  name: "cosine_annealing"
+  warmup_steps: 500
+  min_lr: 1.0e-7
+
+# --- Loss (full feature set) ---
+loss:
+  photometric_loss: "l1"           # "mse" | "l1"
+  lambda_lpips: 0.1
+  lpips_net: "vgg"
+  lambda_depth: 0.1
+  # Regularizers (0 = off)
+  lambda_ssim: 0.0
+  lambda_sobel: 0.0
+  lambda_offset_xy: 0.01
+  offset_xy_norm: "l1"
+  lambda_opacity_entropy: 0.0
+  lambda_scale: 0.0
+  scale_norm: "l2"
+  # Context-view supervision
+  supervise_context: true
+  lambda_context: 2.5
+  context_only: false
+  # Per-view self-reconstruction
+  lambda_self_recon: 0.0
+  # Target-view rendered-depth regularization (vs frozen depth)
+  lambda_render_depth_l1: 0.0
+  lambda_render_depth_grad_l1: 0.0
+  # Target-view valid-visible-pixel mask
+  enable_target_loss_mask: true
+  target_loss_mask_depth_atol: 0.0
+  target_loss_mask_depth_rtol: 0.1
+
+# --- Validation & Checkpointing ---
+validation:
+  val_interval: 200
+  num_preview_scenes: 4
+
+checkpoint:
+  save_top_k: 50
+  save_last_k: 5
+  save_dir: "checkpoints/gsdpt-post-training"
+
+# --- WandB ---
+wandb:
+  project: "vggt-omega-gsdpt-post-training"
+  name: null
+  log_every_n_steps: 10
+  offline: false
+
+# --- Distributed ---
+distributed:
+  backend: "nccl"

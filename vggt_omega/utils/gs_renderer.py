@@ -1,9 +1,3 @@
-# Copyright (c) Meta Platforms, Inc. and affiliates.
-# All rights reserved.
-#
-# This source code is licensed under the license found in the
-# LICENSE file in the root directory of this source tree.
-
 # Rendering follows the Depth-Anything-3 gsplat wiring; gsplat is an optional
 # dependency, so it is imported lazily inside render_gaussians.
 

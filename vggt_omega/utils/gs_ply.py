@@ -1,9 +1,3 @@
-# Copyright (c) Meta Platforms, Inc. and affiliates.
-# All rights reserved.
-#
-# This source code is licensed under the license found in the
-# LICENSE file in the root directory of this source tree.
-
 # Standard 3DGS PLY layout (as in graphdeco-inria/gaussian-splatting and the
 # Depth-Anything-3 exporter): opacity is stored as a logit and scales in log
 # space; rotations are unit WXYZ quaternions.

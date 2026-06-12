@@ -1,9 +1,3 @@
-# Copyright (c) Meta Platforms, Inc. and affiliates.
-# All rights reserved.
-#
-# This source code is licensed under the license found in the
-# LICENSE file in the root directory of this source tree.
-
 # Ported from the Depth-Anything-3 GaussianAdapter; the SH branch is changed to
 # a residual formulation on top of the per-pixel RGB color.
 

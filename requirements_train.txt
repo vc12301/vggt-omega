@@ -1,0 +1,7 @@
+# Extras for GSDPT head training (vggt_omega/training/, train_gs.py).
+# Rendering deps (gsplat, e3nn, imageio) are in requirements_gs.txt — install both:
+#   pip install -r requirements_gs.txt -r requirements_train.txt
+lpips
+wandb
+pyyaml
+tqdm

@@ -158,18 +158,21 @@ GaussianAdapter **无可学习参数**（仅一个非持久化 `sh_mask` buffer�
 ## 3. 输出层初始化（`_init_gs_prediction_head`）
 
 这是让**未训练**网络也能渲染合理场景的关键。初始化作用于 `output_conv2` 的最后一层
-1×1 conv：**权重全部置 0**，于是该层的输出恒等于其 bias，与前面所有层、输入 token 无关。
-bias 全部设置在 **logit / 原始空间**（即激活函数的输入侧）。两个可配置参数控制初始外观：
-`init_pixel_size`（默认 0.25，初始投影像素尺寸）与 `init_opacity`（默认 0.12，初始不透明度）。
+1×1 conv：**权重以极小高斯噪声初始化**（`nn.init.normal_(weight, mean=0, std=init_weight_std)`，
+默认 `init_weight_std = 1e-4`），于是该层输出近似等于其 bias。引入这一微小扰动而非全置 0，
+是为了打破各像素间的对称性，使训练开始后不同像素能收到不同梯度；扰动幅度极小，未训练场景
+仍能合理渲染。bias 全部设置在 **logit / 原始空间**（即激活函数的输入侧）。三个可配置参数控制
+初始外观：`init_pixel_size`（默认 0.25，初始投影像素尺寸）、`init_opacity`（默认 0.12，初始
+不透明度）与 `init_weight_std`（默认 1e-4，权重噪声标准差）。
 
 | 通道 | 含义 | bias 值 | 经 adapter 激活后的效果 |
 |---|---|---|---|
-| `xy_offset` | 像素偏移 | 0 | 高斯落在像素中心，无偏移 |
+| `xy_offset` | 像素偏移 | 0 | 高斯近似落在像素中心，几乎无偏移 |
 | `scales` | 尺度 logit | `logit((s_t−min)/(max−min)) ≈ −3.135` | 投影约 0.25 像素（见推导）|
-| `quaternion` | 旋转 XYZW | `(0,0,0,1)` | 单位四元数（adapter 会归一化）|
-| `sh` | 残差球谐 | 0 | 颜色 = 像素 RGB（无残差）|
-| `depth_offset` | 深度偏移 | 0 | 深度不变 |
-| `opacity` | 不透明度 logit | `logit(0.12) ≈ −1.992` | sigmoid → 0.12 |
+| `quaternion` | 旋转 XYZW | `(0,0,0,1)` | 近似单位四元数（adapter 会归一化）|
+| `sh` | 残差球谐 | 0 | 颜色 ≈ 像素 RGB（残差近似为 0）|
+| `depth_offset` | 深度偏移 | 0 | 深度近似不变 |
+| `opacity` | 不透明度 logit | `logit(0.12) ≈ −1.992` | sigmoid → ≈0.12 |
 
 ### 3.1 scale 初值推导
 

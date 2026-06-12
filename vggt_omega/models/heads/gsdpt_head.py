@@ -1,9 +1,3 @@
-# Copyright (c) Meta Platforms, Inc. and affiliates.
-# All rights reserved.
-#
-# This source code is licensed under the license found in the
-# LICENSE file in the root directory of this source tree.
-
 # DPT trunk mirrors dense_head.py; the full-resolution image-feature injection
 # follows the GSDPT design of Depth-Anything-3.
 
@@ -54,6 +48,7 @@ class GSDPTHead(nn.Module):
         scale_multiplier: float = 0.1,
         init_pixel_size: float = 0.25,
         init_opacity: float = 0.12,
+        init_weight_std: float = 1e-4,
     ) -> None:
         super().__init__()
 
@@ -66,6 +61,7 @@ class GSDPTHead(nn.Module):
         self.scale_multiplier = scale_multiplier
         self.init_pixel_size = init_pixel_size
         self.init_opacity = init_opacity
+        self.init_weight_std = init_weight_std
         self.channel_layout = gs_channel_layout(sh_degree)
         # raw params + 1 opacity channel
         self.output_dim = self.channel_layout["depth_offset"].stop + 1
@@ -114,6 +110,7 @@ class GSDPTHead(nn.Module):
             scale_multiplier=scale_multiplier,
             init_pixel_size=init_pixel_size,
             init_opacity=init_opacity,
+            init_weight_std=init_weight_std,
         )
 
     def forward(
@@ -236,16 +233,23 @@ def _init_gs_prediction_head(
     scale_multiplier: float,
     init_pixel_size: float,
     init_opacity: float,
+    init_weight_std: float = 1e-4,
 ) -> None:
-    """Zero the final conv so the head outputs exactly the per-channel biases below.
+    """Near-zero the final conv so the head outputs approximately the per-channel biases below.
+
+    The weights carry a tiny Gaussian perturbation (std `init_weight_std`) rather
+    than being exactly zero: this breaks the per-pixel symmetry so different
+    pixels receive distinct gradients once training starts, while keeping the
+    initial output close enough to the biases that the untrained scene still
+    renders plausibly.
 
     All biases live in logit/raw space; after GaussianAdapter activation the
-    initial scene is: Gaussians at unprojected depth points (zero xy/depth
-    offset), identity rotation, opacity `init_opacity`, color = pixel RGB (zero
-    residual SH), and an isotropic scale whose screen-space projection is
+    initial scene is: Gaussians at unprojected depth points (≈zero xy/depth
+    offset), ≈identity rotation, opacity ≈`init_opacity`, color ≈ pixel RGB
+    (≈zero residual SH), and an isotropic scale whose screen-space projection is
     ~`init_pixel_size` pixel.
     """
-    nn.init.zeros_(proj.weight)
+    nn.init.normal_(proj.weight, mean=0.0, std=init_weight_std)
     if proj.bias is None:
         raise ValueError("GS prediction head init requires a bias term")
 
