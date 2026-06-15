@@ -203,6 +203,15 @@ class SceneDatasetBase(Dataset):
                 rotation_weight=self.fps_rotation_weight,
             )
         else:
+            # Validation must be reproducible: derive a per-scene deterministic
+            # seed (keyed on scene_dir, so it is stable across val passes, across
+            # steps, and across runs) so the same context/target views are picked
+            # every time. Training without curriculum stays stochastic (seed=None).
+            val_seed = None
+            if self.is_val:
+                digest = hashlib.md5(str(meta["scene_dir"]).encode()).hexdigest()[:8]
+                val_seed = int(digest, 16)
+
             if self.is_val and self.val_context_gap is not None:
                 gap = min(self.val_context_gap, meta["num_frames"])
                 ctx_pool_c2ws = meta["c2ws"][:gap]
@@ -210,17 +219,20 @@ class SceneDatasetBase(Dataset):
                     ctx_pool_c2ws,
                     K=min(num_context, gap),
                     rotation_weight=self.fps_rotation_weight,
+                    seed=val_seed,
                 )
             else:
                 context_indices = farthest_point_sampling(
                     meta["c2ws"],
                     K=num_context,
                     rotation_weight=self.fps_rotation_weight,
+                    seed=val_seed,
                 )
             target_indices = sample_target_views(
                 meta["num_frames"],
                 context_indices,
                 num_targets=num_target,
+                seed=val_seed,
             )
 
         if len(target_indices) == 0:
