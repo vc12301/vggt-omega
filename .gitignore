@@ -20,6 +20,5 @@ skyseg.onnx.tmp
 ckpts/
 
 
-CLAUDE.md
 *outputs/
 wandb/
