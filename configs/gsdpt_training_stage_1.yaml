@@ -16,7 +16,7 @@ dataset_mode: "dl3dv"
 model:
   checkpoint_path: "vggt_omega_ckpts/vggt_omega_1b_512.pt"
   gs_sh_degree: 0
-  resume_gsdpt_checkpoint: null
+  resume_gsdpt_checkpoint: "checkpoints/gsdpt-31000-psnr17.46.pt"
   resume_full_checkpoint: null
   freeze_backbone: true
   init_mode: "finetune"            # finetune | reset_output | scratch
@@ -57,8 +57,8 @@ curriculum:
   min_context_gap_start: 50
   min_context_gap_end: 50
   max_context_gap_start: 50
-  max_context_gap_end: 200
-  warmup_steps: 10000
+  max_context_gap_end: 75
+  warmup_steps: 15000
 
 # --- Training ---
 training:
@@ -117,9 +117,9 @@ validation:
   num_preview_scenes: 4
 
 checkpoint:
-  save_top_k: 80
+  save_top_k: 100
   save_last_k: 5
-  save_dir: "checkpoints/gsdpt"
+  save_dir: "checkpoints/gsdpt_training_stage_1"
 
 # --- WandB ---
 wandb:

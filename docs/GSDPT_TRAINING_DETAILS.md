@@ -470,7 +470,7 @@ PY=/root/miniconda3/envs/da3/bin/python   # torch 2.6+cu124, gsplat, lpips, wand
 
 ```bash
 # 单卡，默认 DL3DV 配置
-$PY train_gs.py --config configs/gsdpt_training.yaml
+python train_gs.py --config configs/gsdpt_training.yaml
 
 # 多卡（8 卡），全功能 mixed 配置
 torchrun --nproc_per_node=8 train_gs.py --config configs/gsdpt_post_training.yaml \
