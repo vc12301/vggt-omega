@@ -16,16 +16,16 @@ dataset_mode: "dl3dv"
 model:
   checkpoint_path: "vggt_omega_ckpts/vggt_omega_1b_512.pt"
   gs_sh_degree: 0
-  resume_gsdpt_checkpoint: "checkpoints/gsdpt-31000-psnr17.46.pt"
+  resume_gsdpt_checkpoint: "checkpoints/gsdpt_training_stage_1/gsdpt-26000-psnr17.99.pt"
   resume_full_checkpoint: null
   freeze_backbone: true
   init_mode: "finetune"            # finetune | reset_output | scratch
 
 # --- Data (DL3DV) ---
 data:
-  data_root: "/data/dataset/open_source/DL3DV-10K/960p"
+  data_root: "/seaweed/training-mri/dataset/open_source/DL3DV-10K/960p"
   train_buckets: ["1K", "2K", "3K", "4K", "5K", "6K", "7K", "8K", "9K", "10K", "11K"]
-  val_root: "/data/dataset/open_source/DL3DV-10K/benchmark_140"
+  val_root: "/seaweed/training-mri/dataset/open_source/DL3DV-10K/benchmark_140"
   val_scene_subdir: "nerfstudio"
   max_train_scenes: null
   max_val_scenes: null
@@ -57,8 +57,8 @@ curriculum:
   min_context_gap_start: 50
   min_context_gap_end: 50
   max_context_gap_start: 50
-  max_context_gap_end: 75
-  warmup_steps: 15000
+  max_context_gap_end: 200
+  warmup_steps: 35000
 
 # --- Training ---
 training:
@@ -72,7 +72,7 @@ training:
 # --- Optimizer ---
 optimizer:
   name: "adamw"
-  lr: 2.0e-4
+  lr: 1.0e-4
   weight_decay: 0.05
   betas: [0.9, 0.95]
   eps: 1.0e-8
@@ -80,7 +80,7 @@ optimizer:
 # --- Scheduler ---
 scheduler:
   name: "cosine_annealing"
-  warmup_steps: 2000
+  warmup_steps: 5000
   min_lr: 1.0e-6
 
 # --- Loss ---
@@ -92,14 +92,14 @@ loss:
   # Regularizers (0 = off)
   lambda_ssim: 0.0
   lambda_sobel: 0.0
-  lambda_offset_xy: 0.0
+  lambda_offset_xy: 0.01
   offset_xy_norm: "l1"
   lambda_opacity_entropy: 0.0
   lambda_scale: 0.0
   scale_norm: "l2"
   # Context-view supervision
-  supervise_context: false
-  lambda_context: 0.0
+  supervise_context: true
+  lambda_context: 1.0
   context_only: false
   # Per-view self-reconstruction
   lambda_self_recon: 0.0
@@ -117,7 +117,7 @@ validation:
   num_preview_scenes: 4
 
 checkpoint:
-  save_top_k: 100
+  save_top_k: 80
   save_last_k: 5
   save_dir: "checkpoints/gsdpt_training_stage_1"
 
