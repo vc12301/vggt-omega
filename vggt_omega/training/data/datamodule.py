@@ -13,6 +13,7 @@ from torch.utils.data import ConcatDataset, DataLoader, Dataset, DistributedSamp
 from vggt_omega.training.config import GSDPTTrainingConfig
 from vggt_omega.training.data.dl3dv_dataset import DL3DVSceneDataset
 from vggt_omega.training.data.rendering_dataset import RenderingSceneDataset
+from vggt_omega.training.data.scannetpp_dataset import ScanNetppSceneDataset
 
 logger = logging.getLogger(__name__)
 
@@ -90,6 +91,34 @@ def _collect_rendering_dirs(
         train_dirs.extend(scenes[:split])
         val_dirs.extend(scenes[split:])
     return train_dirs, val_dirs
+
+
+def _collect_scannetpp_dirs(
+    data_root: str,
+    val_split_ratio: float,
+    transforms_subpath: str = "dslr/nerfstudio/transforms_undistorted.json",
+) -> Tuple[List[Path], List[Path]]:
+    """Collect ScanNet++ scenes, split train/val at the scene level by name.
+
+    Layout: ``data_root/{scene_id}/``. Scenes are sorted alphabetically and the
+    last ``ceil(ratio * n)`` are assigned to validation, the rest to training.
+    Dirs missing ``{transforms_subpath}`` are skipped.
+    """
+    root = Path(data_root)
+    if not root.exists():
+        logger.warning(f"ScanNet++ data root not found: {root}")
+        return [], []
+
+    scenes = [
+        d for d in sorted(root.iterdir()) if d.is_dir() and (d / transforms_subpath).exists()
+    ]
+    if not scenes:
+        return [], []
+    n = len(scenes)
+    n_val = math.ceil(val_split_ratio * n) if val_split_ratio > 0 else 0
+    n_val = min(n_val, n)  # never exceed available
+    split = n - n_val
+    return scenes[:split], scenes[split:]
 
 
 # ──────────────────────────────────────────────────────────────────────
@@ -266,6 +295,45 @@ def _build_rendering_datasets(
     return train_ds, val_ds
 
 
+def _build_scannetpp_datasets(
+    config: GSDPTTrainingConfig, step_counter=None
+) -> Tuple[Dataset, Dataset]:
+    """Construct (train, val) ScanNetppSceneDataset pair from config."""
+    sc = config.scannetpp_data
+    train_dirs, val_dirs = _collect_scannetpp_dirs(
+        sc.data_root, sc.val_split_ratio, sc.transforms_subpath
+    )
+    if sc.max_train_scenes is not None:
+        train_dirs = train_dirs[: sc.max_train_scenes]
+    if sc.max_val_scenes is not None:
+        val_dirs = val_dirs[: sc.max_val_scenes]
+    logger.info(f"[scannetpp] Train scenes: {len(train_dirs)}, Val scenes: {len(val_dirs)}")
+
+    vs = _resolve_view_sampling(config, sc)
+    cur = _resolve_curriculum(config, sc)
+    common = dict(
+        resolution_schedules=vs.resolution_schedules,
+        image_dir_name=sc.image_dir_name,
+        transforms_subpath=sc.transforms_subpath,
+        fps_rotation_weight=vs.fps_rotation_weight,
+        min_scene_frames=vs.min_scene_frames,
+    )
+    train_ds = ScanNetppSceneDataset(
+        scene_dirs=train_dirs,
+        is_val=False,
+        curriculum_config=cur,
+        step_counter=step_counter,
+        **common,
+    )
+    val_ds = ScanNetppSceneDataset(
+        scene_dirs=val_dirs,
+        is_val=True,
+        val_context_gap=sc.val_context_gap,
+        **common,
+    )
+    return train_ds, val_ds
+
+
 def _make_train_loader(train_ds, sampler, num_workers, pin_memory) -> DataLoader:
     return DataLoader(
         train_ds,
@@ -313,8 +381,10 @@ def build_dataloaders(
     ``config.dataset_mode`` selects:
       - "dl3dv"     : DL3DV only (default)
       - "rendering" : rendering_dataset only
-      - "mixed"     : both, train via WeightedConcatSampler(config.mix_ratio);
-                      validation kept separate per dataset.
+      - "scannetpp" : ScanNet++ only
+      - "mixed"     : the datasets named in config.mix_datasets, train via
+                      WeightedConcatSampler(config.mix_ratio); validation kept
+                      separate per dataset.
 
     Returns:
         (train_loader, {dataset_name: val_loader})
@@ -324,6 +394,15 @@ def build_dataloaders(
     val_loaders: Dict[str, DataLoader] = {}
     dl_cfg = config.data
     rd_cfg = config.rendering_data
+    sc_cfg = config.scannetpp_data
+
+    # Per-dataset (builder, config) registry, shared by the single-dataset and
+    # mixed branches so adding a dataset only touches one place.
+    _builders = {
+        "dl3dv": (_build_dl3dv_datasets, dl_cfg),
+        "rendering": (_build_rendering_datasets, rd_cfg),
+        "scannetpp": (_build_scannetpp_datasets, sc_cfg),
+    }
 
     if mode == "dl3dv":
         train_ds, val_ds = _build_dl3dv_datasets(config, step_counter)
@@ -337,22 +416,31 @@ def build_dataloaders(
             val_ds, world_size, rank, dl_cfg.num_workers, dl_cfg.pin_memory
         )
 
-    elif mode == "rendering":
-        train_ds, val_ds = _build_rendering_datasets(config, step_counter)
+    elif mode in ("rendering", "scannetpp"):
+        builder, cfg = _builders[mode]
+        train_ds, val_ds = builder(config, step_counter)
         sampler = (
             DistributedSampler(train_ds, num_replicas=world_size, rank=rank, shuffle=True)
             if use_dist
             else None
         )
-        train_loader = _make_train_loader(train_ds, sampler, rd_cfg.num_workers, rd_cfg.pin_memory)
-        val_loaders["rendering"] = _make_val_loader(
-            val_ds, world_size, rank, rd_cfg.num_workers, rd_cfg.pin_memory
+        train_loader = _make_train_loader(train_ds, sampler, cfg.num_workers, cfg.pin_memory)
+        val_loaders[mode] = _make_val_loader(
+            val_ds, world_size, rank, cfg.num_workers, cfg.pin_memory
         )
 
     elif mode == "mixed":
-        dl_train, dl_val = _build_dl3dv_datasets(config, step_counter)
-        rd_train, rd_val = _build_rendering_datasets(config, step_counter)
-        concat = ConcatDataset([dl_train, rd_train])
+        names = list(config.mix_datasets)
+        train_sets: List[Dataset] = []
+        for name in names:
+            builder, cfg = _builders[name]
+            tr, va = builder(config, step_counter)
+            train_sets.append(tr)
+            # Each val loader uses its own dataset's worker settings.
+            val_loaders[name] = _make_val_loader(
+                va, world_size, rank, cfg.num_workers, cfg.pin_memory
+            )
+        concat = ConcatDataset(train_sets)
         sampler = WeightedConcatSampler(
             concat,
             weights=list(config.mix_ratio),
@@ -360,14 +448,10 @@ def build_dataloaders(
             rank=rank,
             seed=config.seed,
         )
-        # Mixed train loader draws from both sub-datasets; use the DL3DV worker
-        # setting for the shared loader, each val loader uses its own.
-        train_loader = _make_train_loader(concat, sampler, dl_cfg.num_workers, dl_cfg.pin_memory)
-        val_loaders["dl3dv"] = _make_val_loader(
-            dl_val, world_size, rank, dl_cfg.num_workers, dl_cfg.pin_memory
-        )
-        val_loaders["rendering"] = _make_val_loader(
-            rd_val, world_size, rank, rd_cfg.num_workers, rd_cfg.pin_memory
+        # Shared mixed train loader uses the first dataset's worker settings.
+        first_cfg = _builders[names[0]][1]
+        train_loader = _make_train_loader(
+            concat, sampler, first_cfg.num_workers, first_cfg.pin_memory
         )
 
     else:

@@ -83,6 +83,32 @@ class RenderingDataConfig:
 
 
 @dataclass
+class ScanNetppDataConfig:
+    """Config for the ScanNet++ dataset (DSLR perspective frames).
+
+    Layout: ``{data_root}/{scene_id}/dslr/resized_undistorted_images/*.JPG`` with
+    nerfstudio cameras at ``{scene_id}/dslr/nerfstudio/transforms_undistorted.json``.
+    Train/val is split at the scene level by ``val_split_ratio`` (last ceil(ratio)
+    scenes by name -> val), mirroring the rendering dataset.
+    """
+
+    data_root: str = (
+        "/seaweed/eeds-ai-training/experiments/yemu/workspace/data_download/scannetpp/data"
+    )
+    val_split_ratio: float = 0.02  # last ceil(ratio * n) scenes by name -> val
+    image_dir_name: str = "dslr/resized_undistorted_images"
+    transforms_subpath: str = "dslr/nerfstudio/transforms_undistorted.json"
+    max_train_scenes: Optional[int] = None  # limit for debugging
+    max_val_scenes: Optional[int] = None  # limit for debugging
+    num_workers: int = 8
+    pin_memory: bool = True
+    val_context_gap: Optional[int] = None  # if set, val context views sampled from first N frames
+    # Per-dataset overrides (None -> fall back to the global view_sampling / curriculum).
+    view_sampling: Optional["ViewSamplingConfig"] = None
+    curriculum: Optional["CurriculumConfig"] = None
+
+
+@dataclass
 class ViewSamplingConfig:
     resolution_schedules: List[ResolutionSchedule] = field(
         default_factory=lambda: [
@@ -209,6 +235,7 @@ class GSDPTTrainingConfig:
     model: ModelConfig = field(default_factory=ModelConfig)
     data: DataConfig = field(default_factory=DataConfig)
     rendering_data: RenderingDataConfig = field(default_factory=RenderingDataConfig)
+    scannetpp_data: ScanNetppDataConfig = field(default_factory=ScanNetppDataConfig)
     view_sampling: ViewSamplingConfig = field(default_factory=ViewSamplingConfig)
     curriculum: CurriculumConfig = field(default_factory=CurriculumConfig)
     training: TrainingConfig = field(default_factory=TrainingConfig)
@@ -221,9 +248,12 @@ class GSDPTTrainingConfig:
     distributed: DistributedConfig = field(default_factory=DistributedConfig)
     seed: int = 42
     # --- Dataset selection ---
-    # "dl3dv" (default) | "rendering" | "mixed"
+    # "dl3dv" (default) | "rendering" | "scannetpp" | "mixed"
     dataset_mode: str = "dl3dv"
-    # Sampling weights for mixed mode: [dl3dv, rendering]. Only used when
+    # Datasets that participate in "mixed" mode, in concat order. Each name must be
+    # one of {"dl3dv", "rendering", "scannetpp"}. Only used when dataset_mode == "mixed".
+    mix_datasets: List[str] = field(default_factory=lambda: ["dl3dv", "rendering"])
+    # Sampling weights for mixed mode, aligned with mix_datasets. Only used when
     # dataset_mode == "mixed". Need not sum to 1 (normalized internally).
     mix_ratio: List[float] = field(default_factory=lambda: [1.0, 1.0])
 
@@ -339,7 +369,7 @@ def load_config(
 # unsupported value fails fast instead of silently falling back (or crashing
 # mid-run).
 _ALLOWED = {
-    "dataset_mode": {"dl3dv", "rendering", "mixed"},
+    "dataset_mode": {"dl3dv", "rendering", "scannetpp", "mixed"},
     "optimizer.name": {"adamw"},
     "scheduler.name": {"cosine_annealing"},
     "training.mixed_precision": {"bf16", "fp16", "fp32"},
@@ -411,9 +441,22 @@ def _validate_config(cfg: GSDPTTrainingConfig) -> None:
     _check_schedules(cfg.view_sampling, "view_sampling")
     _check_schedules(cfg.data.view_sampling, "data.view_sampling")
     _check_schedules(cfg.rendering_data.view_sampling, "rendering_data.view_sampling")
+    _check_schedules(cfg.scannetpp_data.view_sampling, "scannetpp_data.view_sampling")
 
-    if cfg.dataset_mode == "mixed" and len(cfg.mix_ratio) != 2:
-        errors.append(f"mix_ratio must have exactly 2 entries [dl3dv, rendering], got {cfg.mix_ratio}")
+    if cfg.dataset_mode == "mixed":
+        valid_names = {"dl3dv", "rendering", "scannetpp"}
+        unknown = [n for n in cfg.mix_datasets if n not in valid_names]
+        if unknown:
+            errors.append(
+                f"mix_datasets contains unknown dataset(s) {unknown} "
+                f"(allowed: {sorted(valid_names)})"
+            )
+        if len(cfg.mix_ratio) != len(cfg.mix_datasets):
+            errors.append(
+                f"mix_ratio ({len(cfg.mix_ratio)}) must align with mix_datasets "
+                f"({len(cfg.mix_datasets)}): mix_datasets={cfg.mix_datasets}, "
+                f"mix_ratio={cfg.mix_ratio}"
+            )
 
     if errors:
         raise ValueError("Invalid GSDPT training config:\n  - " + "\n  - ".join(errors))
