@@ -21,7 +21,7 @@ mix_ratio: [1.0, 1.0, 1.0]        # aligned with mix_datasets; normalized intern
 model:
   checkpoint_path: "vggt_omega_ckpts/vggt_omega_1b_512.pt"
   gs_sh_degree: 0
-  resume_gsdpt_checkpoint: "checkpoints/gsdpt_training_stage_3/gsdpt-24000-psnr20.17.pt"
+  resume_gsdpt_checkpoint: "checkpoints/gsdpt_training_stage_3_continous/gsdpt-135200-psnr20.25.pt"
   resume_full_checkpoint: null
   freeze_backbone: true
   init_mode: "finetune"
@@ -30,8 +30,8 @@ model:
 voxel_merge:
   enabled: true
   curriculum: true
-  voxel_size_min: 0.002          # constant lower bound of the sampling range
-  voxel_size_max_start: 0.002    # upper bound at step 0  -> samples 0.002
+  voxel_size_min: 0.001          # constant lower bound of the sampling range
+  voxel_size_max_start: 0.001    # upper bound at step 0  -> samples 0.002
   voxel_size_max_end: 0.008      # upper bound after warmup -> samples [0.002, 0.008]
   warmup_steps: 30000            # match max_iterations (ramp across the whole run)
   eval_voxel_size: 0.002         # validation always fixed at 0.002
