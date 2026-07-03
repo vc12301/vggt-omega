@@ -4,7 +4,7 @@ from vggt_omega.models import VGGTOmega
 from vggt_omega.utils.load_fn import load_and_preprocess_images
 from vggt_omega.utils.pose_enc import encoding_to_camera
 
-checkpoint_path = "ckpts/VGGT-Omega/vggt_omega_1b_512.pt"
+checkpoint_path = "vggt_omega_ckpts/vggt_omega_1b_512.pt"
 image_names = ["path/to/imageA.png", "path/to/imageB.png", "path/to/imageC.png"]
 
 model = VGGTOmega().to("cuda").eval()

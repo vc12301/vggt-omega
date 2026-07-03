@@ -1,13 +1,13 @@
-# GSDPT Head Post-Training (Stage 3) — full-feature config
-# ========================================================
-# Mixed DL3DV + rendering + ScanNet++ data, context-view supervision, and the
-# target-view valid-visible-pixel mask. Identical to gsdpt_training_stage_2 except
-# it adds ScanNet++ as a third mixed dataset, and uses a distinct save_dir / wandb
-# run name. All optional loss terms are exposed here; flip lambdas to 0 to disable.
+# GSDPT Voxel-Merge Pretrain — fixed voxel_size=0.002
+# ====================================================
+# Continues from the stage-3 head (gsdpt-24000-psnr20.17.pt) and trains it to be
+# robust to opacity-weighted voxel merging at a FIXED voxel_size of 0.002. Same
+# data / loss / sampling as stage 3; only voxel_merge and the save_dir / wandb
+# name differ.
 #
 # Usage:
 #   torchrun --nproc_per_node=8 train_gs.py \\
-#       --config configs/gsdpt_training_stage_3.yaml
+#       --config configs/gsdpt_voxel_merge_pretrain.yaml
 
 seed: 42
 
@@ -20,10 +20,17 @@ mix_ratio: [1.0, 1.0, 1.0]        # aligned with mix_datasets; normalized intern
 model:
   checkpoint_path: "vggt_omega_ckpts/vggt_omega_1b_512.pt"
   gs_sh_degree: 0
-  resume_gsdpt_checkpoint: null
-  resume_full_checkpoint: "checkpoints/gsdpt_training_stage_3_continous/gsdpt-99600-psnr20.21.pt"
+  resume_gsdpt_checkpoint: "checkpoints/gsdpt_training_stage_3/gsdpt-24000-psnr20.17.pt"
+  resume_full_checkpoint: null
   freeze_backbone: true
   init_mode: "finetune"
+
+# --- Voxel Merge (fixed size) ---
+voxel_merge:
+  enabled: true
+  curriculum: false
+  voxel_size: 0.001
+  eval_voxel_size: 0.001
 
 # --- Data (DL3DV) ---
 data:
@@ -77,7 +84,7 @@ view_sampling:
   fps_rotation_weight: 1.0
   min_scene_frames: 20
 
-# --- Curriculum Learning ---
+# --- Curriculum Learning (view-gap; unrelated to voxel curriculum) ---
 curriculum:
   enabled: true
   min_context_gap_start: 50
@@ -88,7 +95,7 @@ curriculum:
 
 # --- Training ---
 training:
-  max_iterations: 150000
+  max_iterations: 30000
   batch_size: 1
   gradient_accumulation_steps: 1
   mixed_precision: "bf16"
@@ -106,7 +113,7 @@ optimizer:
 # --- Scheduler ---
 scheduler:
   name: "cosine_annealing"
-  warmup_steps: 2000
+  warmup_steps: 500
   min_lr: 1.0e-7
 
 # --- Loss (full feature set) ---
@@ -139,24 +146,21 @@ loss:
 
 # --- Validation & Checkpointing ---
 validation:
-  val_interval: 400
+  val_interval: 200
   num_preview_scenes: 4
 
 checkpoint:
   save_top_k: 50
   save_last_k: 5
-  save_dir: "checkpoints/gsdpt_training_stage_3_continous"
+  save_dir: "checkpoints/gsdpt_voxel_merge_pretrain"
 
 # --- WandB ---
 wandb:
   project: "vggt-omega-gsdpt-training"
-  name: "gsdpt_training_stage_3_trial_2"
+  name: "gsdpt_voxel_merge_pretrain_trial_1"
   log_every_n_steps: 10
   offline: false
 
 # --- Distributed ---
 distributed:
   backend: "nccl"
-
-
-

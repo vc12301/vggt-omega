@@ -39,6 +39,7 @@ from vggt_omega.training.utils import (
     reinitialize_gsdpt_scratch,
 )
 from vggt_omega.utils.geometry import closed_form_inverse_se3
+from vggt_omega.utils.gs_merge import voxel_merge_gaussians
 from vggt_omega.utils.gs_renderer import render_gaussians
 from vggt_omega.utils.pose_enc import encoding_to_camera
 
@@ -189,6 +190,14 @@ class GSModel(nn.Module):
                 images=ctx_images,
             )
 
+            # 3b. (Optional) opacity-weighted voxel merge to compress the count.
+            # Merging collapses per-view index ranges, so the self-recon path
+            # below keeps the unmerged Gaussians; everything else renders merged.
+            unmerged_gaussians = gaussians
+            voxel_size = batch.get("voxel_size", None)
+            if self.cfg.voxel_merge.enabled and voxel_size is not None:
+                gaussians = voxel_merge_gaussians(gaussians, float(voxel_size))
+
             # 4. Render to (predicted) target views.
             tgt_extr = extrinsic[0, K:]  # (M, 3, 4) w2c
             tgt_intr = intrinsic[0, K:]  # (M, 3, 3) pixel-space
@@ -212,11 +221,11 @@ class GSModel(nn.Module):
                 for k in range(K):
                     sl = slice(k * n_per_view, (k + 1) * n_per_view)
                     g_k = Gaussians(
-                        means=gaussians.means[:, sl],
-                        harmonics=gaussians.harmonics[:, sl],
-                        opacities=gaussians.opacities[:, sl],
-                        scales=gaussians.scales[:, sl],
-                        rotations=gaussians.rotations[:, sl],
+                        means=unmerged_gaussians.means[:, sl],
+                        harmonics=unmerged_gaussians.harmonics[:, sl],
+                        opacities=unmerged_gaussians.opacities[:, sl],
+                        scales=unmerged_gaussians.scales[:, sl],
+                        rotations=unmerged_gaussians.rotations[:, sl],
                     )
                     col_k, _ = render_gaussians(
                         g_k, extrinsic[0, k : k + 1], intrinsic[0, k : k + 1], H, W
@@ -251,6 +260,7 @@ class GSModel(nn.Module):
             "rendered_context": rendered_context,
             "rendered_self": rendered_self,
             "target_loss_mask": target_loss_mask,
+            "num_gaussians": gaussians.means.shape[1],
         }
 
     # ------------------------------------------------------------------

@@ -33,6 +33,7 @@ from vggt_omega.training.data.datamodule import build_dataloaders
 from vggt_omega.training.losses import compute_psnr, compute_ssim
 from vggt_omega.training.model_wrapper import GSModel
 from vggt_omega.training.utils import CosineAnnealingWarmupScheduler
+from vggt_omega.utils.gs_merge import get_curriculum_voxel_size
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(levelname)s %(message)s")
 logger = logging.getLogger(__name__)
@@ -125,6 +126,8 @@ def _log_preview(wandb_run, model, batch, step: int, prefix: str = "val"):
         import wandb
     except ImportError:
         return
+    if model.cfg.voxel_merge.enabled:
+        batch["voxel_size"] = model.cfg.voxel_merge.eval_voxel_size
     model.eval()
     with torch.no_grad():
         fwd = model(batch)
@@ -183,6 +186,10 @@ def validate(model: GSModel, val_loader: DataLoader, device):
     total_loss, total_psnr, total_ssim, total_lpips, n = 0.0, 0.0, 0.0, 0.0, 0
     for batch in val_loader:
         batch = {k: v.to(device) if isinstance(v, torch.Tensor) else v for k, v in batch.items()}
+        # Validation always uses the fixed eval voxel size so PSNR/SSIM and
+        # checkpoint selection stay comparable across steps.
+        if model.cfg.voxel_merge.enabled:
+            batch["voxel_size"] = model.cfg.voxel_merge.eval_voxel_size
         fwd = model(batch)
         losses = model.compute_loss(fwd, batch)
 
@@ -393,6 +400,16 @@ def main(config: GSDPTTrainingConfig | None = None):
                 k: v.to(device) if isinstance(v, torch.Tensor) else v for k, v in batch.items()
             }
 
+            # Per-step voxel size for the (optional) Gaussian merge: sampled under
+            # the curriculum schedule, or the fixed value. Computed in the main
+            # process where `step` is known (no dataset-worker plumbing).
+            if config.voxel_merge.enabled:
+                batch["voxel_size"] = (
+                    get_curriculum_voxel_size(step, config.voxel_merge)
+                    if config.voxel_merge.curriculum
+                    else config.voxel_merge.voxel_size
+                )
+
             # On non-final micro-steps under DDP, skip the gradient all-reduce.
             # no_sync() must wrap BOTH forward and backward — DDP decides what to
             # reduce during the forward pass, so wrapping only backward leaves the
@@ -489,6 +506,9 @@ def main(config: GSDPTTrainingConfig | None = None):
                 }
                 for key, val_sum in log_comp_accum.items():
                     log_dict[f"train/{key[5:]}"] = val_sum / log_count
+                if config.voxel_merge.enabled:
+                    log_dict["train/num_gaussians"] = fwd["num_gaussians"]
+                    log_dict["train/voxel_size"] = batch.get("voxel_size", 0.0)
                 wandb_run.log(log_dict, step=step)
                 _log_preview(wandb_run, raw_model, batch, step, prefix="train")
             log_loss_accum = 0.0

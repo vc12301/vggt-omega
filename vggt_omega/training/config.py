@@ -134,6 +134,27 @@ class CurriculumConfig:
 
 
 @dataclass
+class VoxelMergeConfig:
+    """Opacity-weighted voxel merging of the predicted Gaussians.
+
+    Disabled by default (backward compatible). When enabled, Gaussians sharing a
+    voxel are merged into one before rendering (see utils/gs_merge.py). The voxel
+    size is fixed (``voxel_size``) unless ``curriculum`` is on, in which case it is
+    sampled per step with a linearly widening upper bound. Validation always uses
+    ``eval_voxel_size`` so metrics stay comparable across steps.
+    """
+
+    enabled: bool = False
+    voxel_size: float = 0.002  # fixed value when curriculum is off
+    eval_voxel_size: float = 0.002  # always used in validation / preview
+    curriculum: bool = False  # if True, sample per step via get_curriculum_voxel_size
+    voxel_size_min: float = 0.002  # constant lower bound of the sampling range
+    voxel_size_max_start: float = 0.002  # upper bound at step 0
+    voxel_size_max_end: float = 0.008  # upper bound after warmup
+    warmup_steps: int = 10000  # linear ramp duration for the upper bound
+
+
+@dataclass
 class TrainingConfig:
     max_iterations: int = 100000
     batch_size: int = 1
@@ -239,6 +260,7 @@ class GSDPTTrainingConfig:
     view_sampling: ViewSamplingConfig = field(default_factory=ViewSamplingConfig)
     curriculum: CurriculumConfig = field(default_factory=CurriculumConfig)
     training: TrainingConfig = field(default_factory=TrainingConfig)
+    voxel_merge: VoxelMergeConfig = field(default_factory=VoxelMergeConfig)
     optimizer: OptimizerConfig = field(default_factory=OptimizerConfig)
     scheduler: SchedulerConfig = field(default_factory=SchedulerConfig)
     loss: LossConfig = field(default_factory=LossConfig)
@@ -442,6 +464,18 @@ def _validate_config(cfg: GSDPTTrainingConfig) -> None:
     _check_schedules(cfg.data.view_sampling, "data.view_sampling")
     _check_schedules(cfg.rendering_data.view_sampling, "rendering_data.view_sampling")
     _check_schedules(cfg.scannetpp_data.view_sampling, "scannetpp_data.view_sampling")
+
+    # Voxel-merge sampling bounds must be ordered and positive.
+    if cfg.voxel_merge.enabled:
+        vm = cfg.voxel_merge
+        if min(vm.voxel_size, vm.eval_voxel_size, vm.voxel_size_min) <= 0:
+            errors.append("voxel_merge sizes must all be > 0 when enabled")
+        if not (vm.voxel_size_min <= vm.voxel_size_max_start <= vm.voxel_size_max_end):
+            errors.append(
+                "voxel_merge requires voxel_size_min <= voxel_size_max_start <= "
+                f"voxel_size_max_end (got {vm.voxel_size_min}, {vm.voxel_size_max_start}, "
+                f"{vm.voxel_size_max_end})"
+            )
 
     if cfg.dataset_mode == "mixed":
         valid_names = {"dl3dv", "rendering", "scannetpp"}
