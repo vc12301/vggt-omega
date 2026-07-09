@@ -131,7 +131,7 @@ the model's own predicted cameras and depth drive Gaussian unprojection and nove
 Training draws from up to three datasets, selected via `dataset_mode` / `mix_datasets` in the config:
 
 - **DL3DV** — real multi-view scenes
-- **rendering** — synthetic panorama-to-perspective renders
+- **rendering** — synthetic renders (closed-sourced)
 - **ScanNet++** — real indoor scenes
 
 Each dataset root and its layout keys (`data_root`, `val_root`, `image_dir_name`, etc.) are set in

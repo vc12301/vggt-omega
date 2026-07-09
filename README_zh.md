@@ -115,7 +115,7 @@ python test_gs_inference.py \
 训练最多使用三个数据集，通过配置中的 `dataset_mode` / `mix_datasets` 选择：
 
 - **DL3DV** —— 真实多视角场景
-- **rendering** —— 全景转透视的合成渲染数据
+- **rendering** —— 合成渲染数据（闭源数据）
 - **ScanNet++** —— 真实室内场景
 
 每个数据集的根目录及布局字段（`data_root`、`val_root`、`image_dir_name` 等）都在配置文件中设置。所有随仓库提供的配置都指向作者内部的绝对路径，因此**你必须重新设置所用到的每一个数据集根目录**。
