@@ -219,7 +219,7 @@ def run_pipeline(args, image_paths: list, output_dir: str, ply_suffix: str = "")
 
 
 def add_common_args(parser: argparse.ArgumentParser) -> None:
-    parser.add_argument("--checkpoint", default="ckpts/VGGT-Omega/vggt_omega_1b_512.pt", help="Model checkpoint path")
+    parser.add_argument("--checkpoint", default="/root/vggt_omega_checkpoints/vggt_omega_1b_512.pt", help="Model checkpoint path")
     parser.add_argument("--resolution", type=int, default=512, help="Inference image resolution")
     parser.add_argument("--conf_percentile", type=float, default=20.0,
                         help="Drop points below this confidence percentile (0 disables)")
