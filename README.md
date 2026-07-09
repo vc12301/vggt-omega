@@ -1,142 +1,211 @@
 <div align="center">
-<h1>VGGT-&Omega;</h1>
+<h1>Feed-Forward 3DGS with VGGT-&Omega;</h1>
 
-<a href="http://vggt-omega.github.io/" target="_blank" rel="noopener noreferrer"><img src="https://img.shields.io/badge/Project_Page-green" alt="Project Page"></a>
-<a href="https://arxiv.org/abs/2605.15195" target="_blank" rel="noopener noreferrer"><img src="https://img.shields.io/badge/arXiv-2605.15195-b31b1b" alt="arXiv"></a>
-<a href="https://huggingface.co/spaces/facebook/vggt-omega"><img src='https://img.shields.io/badge/%F0%9F%A4%97%20Hugging%20Face-Demo-blue'></a>
+<a href="https://huggingface.co/vc12301/VGGT-Omega-GSDPT/tree/main"><img src='https://img.shields.io/badge/%F0%9F%A4%97%20Hugging%20Face-GSDPT_Checkpoint-blue'></a>
 
-<p>
-  <span class="author"><a href="https://jytime.github.io/">Jianyuan Wang</a><sup>1,2</sup></span>
-  <span class="author"><a href="https://silent-chen.github.io/">Minghao Chen</a><sup>1</sup></span>
-  <span class="author"><a href="https://scholar.google.com/citations?user=FUDsZkEAAAAJ&amp;hl=zh-CN">Shangzhan Zhang</a><sup>1</sup></span>
-  <span class="author"><a href="https://nikitakaraevv.github.io/">Nikita Karaev</a><sup>1</sup></span>
-  <br>
-  <span class="author"><a href="https://demuc.de/">Johannes Schönberger</a><sup>2</sup></span>
-  <span class="author"><a href="https://scholar.google.com/citations?user=IJidh-UAAAAJ&amp;hl=fr">Patrick Labatut</a><sup>2</sup></span>
-  <span class="author"><a href="https://scholar.google.com/citations?user=lJ_oh2EAAAAJ&amp;hl=en">Piotr Bojanowski</a><sup>2</sup></span>
-  <span class="author"><a href="https://d-novotny.github.io/">David Novotny</a></span>
-  <br>
-  <span class="author"><a href="https://www.robots.ox.ac.uk/~vedaldi/">Andrea Vedaldi</a><sup>1,2</sup></span>
-  <span class="author"><a href="https://chrirupp.github.io/">Christian Rupprecht</a><sup>1</sup></span>
-</p>
-
-**<sup>1</sup>[Visual Geometry Group, University of Oxford](https://www.robots.ox.ac.uk/~vgg/)**; **<sup>2</sup>[Meta AI](https://ai.facebook.com/research/)**
+**English** | [中文](./README_zh.md)
 </div>
 
-## Pretrained models
+## Overview
 
-Before using the models, please request access to the checkpoints [here](https://huggingface.co/facebook/VGGT-Omega). Once your request is approved, you can download the checkpoints. Please note that access requests are reviewed by an automated process based on the information provided in the request.
+This project builds a **feed-forward 3D Gaussian Splatting (3DGS)** framework on top of the
+[VGGT-Omega](http://vggt-omega.github.io/) reconstruction model. Given a set of images or a video,
+a trained **GSDPT head** predicts per-pixel 3D Gaussians in a single forward pass — no per-scene
+optimization. From those Gaussians the pipeline exports a standard 3DGS `.ply`, renders novel views
+along an interpolated camera path, and also produces the underlying depth maps, cameras, and point
+cloud.
 
-| Model | Resolution | Text alignment | Download |
+The framework consists of two components loaded together at runtime:
+
+- **VGGT-Omega backbone** — feed-forward camera + depth reconstruction (frozen during 3DGS training).
+- **GSDPT head** — the feed-forward 3DGS head trained in this repo, which turns backbone features
+  into per-pixel Gaussians.
+
+Both **inference** (`gs_inference_pipeline_video.py`) and **training** (`train_gs.py`) are supported.
+
+## Pretrained Models
+
+You need two checkpoints — the VGGT-Omega backbone and the trained GSDPT head.
+
+| Component | Model | Resolution | Download |
 | :--- | :--- | :--- | :--- |
-| `VGGT-Omega-1B-512` | 512 | No | [Link](https://huggingface.co/facebook/VGGT-Omega/blob/main/vggt_omega_1b_512.pt) |
-| `VGGT-Omega-1B-256-Text-Alignment` | 256 | Yes | [Link](https://huggingface.co/facebook/VGGT-Omega/blob/main/vggt_omega_1b_256_text.pt) |
+| GSDPT head | `gsdpt-vggt-omega.pt` | 512 | [🤗 vc12301/VGGT-Omega-GSDPT](https://huggingface.co/vc12301/VGGT-Omega-GSDPT/tree/main) |
+| Backbone | `vggt_omega_1b_512.pt` | 512 | [🤗 facebook/VGGT-Omega](https://huggingface.co/facebook/VGGT-Omega/blob/main/vggt_omega_1b_512.pt) |
 
-The authors are not involved in the review process and cannot approve or reject individual applications. However, the [🤗 Hugging Face demo](https://huggingface.co/spaces/facebook/vggt-omega) is available to everyone.
+> The backbone lives in the official VGGT-Omega Hugging Face repo and requires access approval.
+> Requests are reviewed by an automated process based on the information provided.
 
-
-## Quick Start
-
-First, clone this repository and install the dependencies:
+## Installation
 
 ```bash
-git clone git@github.com:facebookresearch/vggt-omega.git
-cd vggt-omega
-pip install -r requirements.txt
+conda create -n vggt-omega python=3.10
+conda activate vggt-omega
+cd /path/to/Feedforward-3DGS-with-VGGT-Omega
+
+# Choose the torch build that matches your CUDA version:
+# https://pytorch.org/get-started/previous-versions/
+pip install torch==2.10.0 torchvision==0.25.0 torchaudio==2.10.0 --index-url https://download.pytorch.org/whl/cu128
+
+pip install -r requirements.txt        # core model + inference
+pip install -r requirements_gs.txt     # 3DGS rendering/export (gsplat, e3nn, imageio)
+pip install -r requirements_train.txt  # training extras (lpips, wandb, pyyaml, tqdm)
 pip install -e .
+
+# System libs needed by OpenCV / rendering
+apt-get install -y libgl1-mesa-glx libglib2.0-0
 ```
 
+For inference only, `requirements.txt` + `requirements_gs.txt` are sufficient;
+`requirements_train.txt` is only needed for training.
 
-Now, try the model with a few lines of code:
+## Inference
 
-```python
-import torch
-
-from vggt_omega.models import VGGTOmega
-from vggt_omega.utils.load_fn import load_and_preprocess_images
-from vggt_omega.utils.pose_enc import encoding_to_camera
-
-checkpoint_path = "path/to/vggt_omega_1b_512.pt"
-image_names = ["path/to/imageA.png", "path/to/imageB.png", "path/to/imageC.png"]
-
-model = VGGTOmega().to("cuda").eval()
-model.load_state_dict(torch.load(checkpoint_path, map_location="cpu"))
-
-images = load_and_preprocess_images(image_names, image_resolution=512).to("cuda")
-
-with torch.inference_mode():
-    predictions = model(images)
-
-extrinsics, intrinsics = encoding_to_camera(
-    predictions["pose_enc"],
-    predictions["images"].shape[-2:],
-)
-
-depth = predictions["depth"]
-depth_conf = predictions["depth_conf"]
-camera_and_register_tokens = predictions["camera_and_register_tokens"]
-camera_tokens = camera_and_register_tokens[:, :, :1]
-registers = camera_and_register_tokens[:, :, 1:]
-```
-
-For the text-aligned checkpoint, use `VGGTOmega(enable_alignment=True)` with `image_resolution=256` and read `predictions["text_alignment_embedding"]`.
-
-
-## Interactive Demo
-
-Install the demo dependencies:
+The main entry point is `gs_inference_pipeline_video.py`, which samples frames from a video, runs
+one feed-forward pass, and reconstructs the scene. Point it at your downloaded backbone and GSDPT
+checkpoints:
 
 ```bash
-pip install -r requirements_demo.txt
+python gs_inference_pipeline_video.py \
+    --checkpoint   /PATH/TO/vggt_omega_1b_512.pt \
+    --gsdpt_checkpoint /PATH/TO/gsdpt-vggt-omega.pt \
+    --video examples/school.mp4 \
+    --fps 1.0 \
+    --max_frames 45
 ```
 
-Launch the Gradio demo with a local checkpoint path:
+### Outputs
+
+Results are written to `gs_inference_pipeline_video_outputs/{video_stem}/` by default
+(override with `--output_dir`):
+
+| Path | Description |
+| :--- | :--- |
+| `gaussians.ply` | Standard 3DGS point cloud — open in any 3DGS viewer |
+| `vggt-o-{scene}-render.mp4` | Novel-view rendering along an interpolated camera path |
+| `compare/{i:03d}.png` | Side-by-side input view vs. re-rendered view |
+| `pcd/pointcloud_{stem}.ply` | RGB point cloud (depth unprojection) |
+| `depth/{stem}.npy` + `.png` | Raw float32 depth and colorized depth per frame |
+| `depth_conf.npy`, `cameras.npz` | Depth confidence and predicted `extrinsic`/`intrinsic` |
+| `input_images/{i:06d}.png` | Extracted input frames |
+
+### Key options
+
+| Argument | Default | Description |
+| :--- | :--- | :--- |
+| `--video` | `examples/school.mp4` | Input video file |
+| `--fps` | `1.0` | Frame sampling rate |
+| `--max_frames` | `45` | Cap on frames used for inference (more frames need more GPU memory) |
+| `--checkpoint` | — | VGGT-Omega backbone checkpoint |
+| `--gsdpt_checkpoint` | — | Trained GSDPT head checkpoint |
+| `--sh_degree` | `0` | SH degree of the GS head — must match the trained head |
+| `--resolution` | `512` | Inference image resolution |
+| `--no_render_video` | off | Skip the interpolated render video |
+| `--no_compare` | off | Skip the input-vs-render comparison images |
+| `--conf_percentile` | `0.0` | Drop low-confidence points/Gaussians below this percentile |
+| `--edge_filter` | off | Remove flying points on depth discontinuities |
+
+> The `--checkpoint` and `--gsdpt_checkpoint` defaults are hardcoded to the authors' local paths.
+> Pass your own paths on the command line (as above), or edit the defaults in
+> `test_gs_inference.py` / `inference_pipeline.py`.
+
+### Reconstruct from an image directory
+
+To run on a folder of images instead of a video, use `test_gs_inference.py` (same GSDPT/backbone
+loading, `--image_dir` instead of `--video`):
 
 ```bash
-python demo_gradio.py \
-  --checkpoint checkpoints/VGGT-Omega-1B-512/model.pt \
-  --image-resolution 512
+python test_gs_inference.py \
+    --checkpoint   /PATH/TO/vggt_omega_1b_512.pt \
+    --gsdpt_checkpoint /PATH/TO/gsdpt-vggt-omega.pt \
+    --image_dir /PATH/TO/images
 ```
 
-The demo accepts uploaded images or a video, runs camera and depth inference,
-and visualizes the depth-unprojected point cloud and predicted cameras as a GLB
-scene.
+## Training
 
-## Runtime and GPU Memory
+Training optimizes **only the GSDPT head**; the VGGT-Omega backbone, camera head, and depth head
+stay frozen. Since VGGT-Omega is pose-free, ground-truth cameras are used only for view sampling —
+the model's own predicted cameras and depth drive Gaussian unprojection and novel-view rendering.
 
-We benchmark the end-to-end peak GPU memory usage of `VGGT-Omega-1B-512` on a
-single NVIDIA A100 GPU with 624x416 input images. The measurement covers the full
-inference program, from loading the model weights onto the GPU through the
-forward pass, so it includes both the memory needed to store the model itself
-and the memory used by inference activations and buffers. In other words, a GPU
-with at least the listed available memory is able to run the corresponding
-number of input frames under this setup.
+### Datasets
 
-| **Input Frames** | 1 | 10 | 25 | 50 | 100 | 200 | 300 | 400 | 500 |
-|:----------------:|:-:|:--:|:--:|:--:|:---:|:---:|:---:|:---:|:---:|
-| **Peak Memory (GB)** | 6.02 | 6.67 | 7.80 | 9.66 | 13.37 | 20.82 | 28.26 | 35.71 | 43.15 |
+Training draws from up to three datasets, selected via `dataset_mode` / `mix_datasets` in the config:
 
-The benchmark uses [`load_and_preprocess_images`](./vggt_omega/utils/load_fn.py)
-with the default `mode="balanced"` and `image_resolution=512`. For these roughly
-3:2 landscape images, this produces 624x416 inputs. You can set
-`mode="max_size"` to resize the longest side to 512 instead; for the same aspect
-ratio, this gives about 512x336 inputs and uses less GPU memory.
+- **DL3DV** — real multi-view scenes
+- **rendering** — synthetic panorama-to-perspective renders
+- **ScanNet++** — real indoor scenes
+
+Each dataset root and its layout keys (`data_root`, `val_root`, `image_dir_name`, etc.) are set in
+the config. All shipped configs point at the authors' internal absolute paths, so **you must repoint
+every dataset root you use**.
+
+### Commands
+
+Single-GPU:
+
+```bash
+python train_gs.py --config configs/gsdpt_training_stage_3.yaml
+```
+
+Single-node multi-GPU (8 GPUs, DDP via torchrun):
+
+```bash
+torchrun --nproc_per_node=8 train_gs.py \
+    --config configs/gsdpt_training_stage_3.yaml
+```
+
+CLI overrides use dot notation on top of the YAML, e.g.
+`optimizer.lr=5e-5 training.max_iterations=50000`. (List-valued keys such as `mix_ratio` can only be
+set in YAML.)
+
+### Stages
+
+The configs form a progressive curriculum, chained through checkpoint paths — reproduce them in
+order, editing the resume path at each step:
+
+| Config | Data | Notes |
+| :--- | :--- | :--- |
+| `gsdpt_training_stage_1.yaml` | DL3DV | Base training of the GS head, core losses |
+| `gsdpt_training_stage_2.yaml` | DL3DV + rendering | Refinement with synthetic renders, resumes stage 1 |
+| `gsdpt_training_stage_3.yaml` | DL3DV + rendering + ScanNet++ | Longest mixed run, full feature set |
+
+### Before you train — edit the config
+
+In your chosen `configs/gsdpt_training_stage_*.yaml`, update at least:
+
+- `model.checkpoint_path` — path to the VGGT-Omega backbone (`vggt_omega_1b_512.pt`)
+- `model.resume_gsdpt_checkpoint` / `model.resume_full_checkpoint` — set to `null` for a fresh run,
+  or point at a prior stage's checkpoint to continue
+- `data.data_root` / `data.val_root`, `rendering_data.data_root`, `scannetpp_data.data_root` —
+  your dataset roots (only the ones your `dataset_mode` uses)
+- `checkpoint.save_dir` — where checkpoints are written
+- `wandb.offline: true` — set this to disable Weights & Biases logging
+
+> **Notes**
+> - `training.batch_size` must be `1`. Scale the effective batch with
+>   `gradient_accumulation_steps` and/or more DDP ranks.
+> - Resolutions in `view_sampling.resolution_schedules` must be multiples of 16 (the patch size).
+> - `train_gs.py` hardcodes a WandB base URL and a SOCKS5 proxy in its environment (top of the
+>   file). On a normal machine these will break outbound networking — **remove or override those
+>   lines**, or set `wandb.offline: true`.
+> - A CUDA GPU is required.
 
 ## License
 
-See the [LICENSE](./LICENSE) file for details about the license under which
-this code is made available.
+See the [LICENSE](./LICENSE) file for details about the license under which this code is made
+available.
 
-[^release]: This Release is intended to support the open source research community.
+## Citation
+
+This project builds on VGGT-Omega:
 
 ```bibtex
 @misc{wang2026vggtomega,
-      title={VGGT-$\Omega$}, 
+      title={VGGT-$\Omega$},
       author={Jianyuan Wang and Minghao Chen and Shangzhan Zhang and Nikita Karaev and Johannes Schönberger and Patrick Labatut and Piotr Bojanowski and David Novotny and Andrea Vedaldi and Christian Rupprecht},
       year={2026},
       eprint={2605.15195},
       archivePrefix={arXiv},
       primaryClass={cs.CV},
-      url={https://arxiv.org/abs/2605.15195}, 
+      url={https://arxiv.org/abs/2605.15195},
 }
 ```
